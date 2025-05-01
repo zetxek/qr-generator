@@ -6,6 +6,8 @@ import (
 	"image/png"
 	"log"
 	"net/http"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 func generateImage() image.Image {
@@ -42,9 +44,36 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func qrHandler(w http.ResponseWriter, r *http.Request) {
+	// Get the text parameter from the query string
+	text := r.URL.Query().Get("text")
+	if text == "" {
+		http.Error(w, "Please provide a 'text' parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Generate QR code
+	qr, err := qrcode.New(text, qrcode.Medium)
+	if err != nil {
+		http.Error(w, "Failed to generate QR code", http.StatusInternalServerError)
+		return
+	}
+
+	// Set the content type header
+	w.Header().Set("Content-Type", "image/png")
+
+	// Write the QR code as PNG
+	if err := qr.Write(256, w); err != nil {
+		http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
+		return
+	}
+}
+
 func main() {
 	// Register the image handler
 	http.HandleFunc("/image", imageHandler)
+	// Register the QR code handler
+	http.HandleFunc("/qr", qrHandler)
 
 	// Start the server
 	log.Println("Server starting on :8080...")
