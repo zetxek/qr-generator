@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"image"
 	"image/color"
 	"image/png"
@@ -59,14 +61,25 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set the content type header
-	w.Header().Set("Content-Type", "image/png")
-
-	// Write the QR code as PNG
-	if err := qr.Write(256, w); err != nil {
+	// Create a buffer to store the PNG
+	var buf bytes.Buffer
+	if err := qr.Write(256, &buf); err != nil {
 		http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
 		return
 	}
+
+	// Check if base64 encoding is requested
+	if r.URL.Query().Get("base64") == "true" {
+		// Encode the image to base64
+		base64Str := base64.StdEncoding.EncodeToString(buf.Bytes())
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(base64Str))
+		return
+	}
+
+	// If not base64, return the PNG image
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(buf.Bytes())
 }
 
 func main() {
