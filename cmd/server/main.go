@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"log"
 	"net/http"
+	"strconv"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -54,6 +55,21 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get and validate the size parameter
+	size := 256 // default size
+	if sizeStr := r.URL.Query().Get("size"); sizeStr != "" {
+		var err error
+		size, err = strconv.Atoi(sizeStr)
+		if err != nil {
+			http.Error(w, "Size must be a valid number", http.StatusBadRequest)
+			return
+		}
+		if size < 50 || size > 1000 {
+			http.Error(w, "Size must be between 50 and 1000 pixels", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Generate QR code
 	qr, err := qrcode.New(text, qrcode.Medium)
 	if err != nil {
@@ -63,7 +79,7 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create a buffer to store the PNG
 	var buf bytes.Buffer
-	if err := qr.Write(256, &buf); err != nil {
+	if err := qr.Write(size, &buf); err != nil {
 		http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
 		return
 	}
