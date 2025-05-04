@@ -1,0 +1,14 @@
+options:
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 100
+  logging: CLOUD_LOGGING_ONLY
+  # Enable Docker layer caching
+  dockerCache: true
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/qr-generator', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/qr-generator']
+images:
+  - 'gcr.io/$PROJECT_ID/qr-generator'
