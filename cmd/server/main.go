@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/boombuler/barcode"
+	"github.com/boombuler/barcode/code128"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -120,6 +122,58 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
+func barcodeHandler(w http.ResponseWriter, r *http.Request) {
+	text := r.URL.Query().Get("text")
+	if text == "" {
+		http.Error(w, "Please provide a 'text' parameter", http.StatusBadRequest)
+		return
+	}
+
+	size := 256 // default size
+	if sizeStr := r.URL.Query().Get("size"); sizeStr != "" {
+		var err error
+		size, err = strconv.Atoi(sizeStr)
+		if err != nil {
+			http.Error(w, "Size must be a valid number", http.StatusBadRequest)
+			return
+		}
+		if size < 50 || size > 1000 {
+			http.Error(w, "Size must be between 50 and 1000 pixels", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Generate barcode
+	bar, err := code128.Encode(text)
+	if err != nil {
+		http.Error(w, "Failed to generate barcode", http.StatusInternalServerError)
+		return
+	}
+
+	// Scale barcode to requested size
+	scaledBar, err := barcode.Scale(bar, size, size)
+	if err != nil {
+		http.Error(w, "Failed to scale barcode", http.StatusInternalServerError)
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, scaledBar); err != nil {
+		http.Error(w, "Failed to encode barcode", http.StatusInternalServerError)
+		return
+	}
+
+	if r.URL.Query().Get("base64") == "true" {
+		base64Str := base64.StdEncoding.EncodeToString(buf.Bytes())
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(base64Str))
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(buf.Bytes())
+}
+
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello"))
 }
@@ -129,6 +183,8 @@ func main() {
 	http.HandleFunc("/image", imageHandler)
 	// Register the QR code handler
 	http.HandleFunc("/qr", qrHandler)
+	// Register the barcode handler
+	http.HandleFunc("/barcode", barcodeHandler)
 	// Register the ping handler
 	http.HandleFunc("/ping", pingHandler)
 
