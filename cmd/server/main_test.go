@@ -191,3 +191,77 @@ func TestQRHandler_SizeOutOfRange(t *testing.T) {
 		}
 	}
 }
+
+func TestBarcodeHandler_Basic(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestBarcodeHandler_CustomSize(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890&size=300", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestBarcodeHandler_Base64(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890&base64=true", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "text/plain" {
+		t.Fatalf("expected Content-Type text/plain, got %s", ct)
+	}
+	if _, err := base64.StdEncoding.DecodeString(rr.Body.String()); err != nil {
+		t.Fatalf("expected valid base64, got error: %v", err)
+	}
+}
+
+func TestBarcodeHandler_MissingText(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "text") {
+		t.Fatalf("expected error about 'text', got %s", rr.Body.String())
+	}
+}
+
+func TestBarcodeHandler_InvalidSize(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890&size=notanumber", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Size must be a valid number") {
+		t.Fatalf("expected error about size, got %s", rr.Body.String())
+	}
+}
