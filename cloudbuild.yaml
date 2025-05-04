@@ -8,5 +8,15 @@ steps:
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/qr-generator', '.']
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/qr-generator']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run', 'deploy', 'qr-generator',
+        '--image', 'gcr.io/$PROJECT_ID/qr-generator',
+        '--region', 'europe-west4',
+        '--platform', 'managed',
+        '--allow-unauthenticated'
+      ]
 images:
   - 'gcr.io/$PROJECT_ID/qr-generator'
