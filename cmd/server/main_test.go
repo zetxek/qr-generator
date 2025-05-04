@@ -37,6 +37,86 @@ func TestImageHandler(t *testing.T) {
 	}
 }
 
+func TestImageHandler_Defaults(t *testing.T) {
+	req := httptest.NewRequest("GET", "/image", nil)
+	rr := httptest.NewRecorder()
+	imageHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestImageHandler_CustomSize(t *testing.T) {
+	req := httptest.NewRequest("GET", "/image?size=123", nil)
+	rr := httptest.NewRecorder()
+	imageHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestImageHandler_CustomColors(t *testing.T) {
+	req := httptest.NewRequest("GET", "/image?color1=00ff00&color2=ff00ff", nil)
+	rr := httptest.NewRecorder()
+	imageHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestImageHandler_InvalidSize(t *testing.T) {
+	req := httptest.NewRequest("GET", "/image?size=notanumber", nil)
+	rr := httptest.NewRecorder()
+	imageHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestImageHandler_InvalidColors(t *testing.T) {
+	req := httptest.NewRequest("GET", "/image?color1=badcolor&color2=alsoBad", nil)
+	rr := httptest.NewRecorder()
+	imageHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
 func TestQRHandler_PNG(t *testing.T) {
 	req := httptest.NewRequest("GET", "/qr?text=hello", nil)
 	rr := httptest.NewRecorder()
