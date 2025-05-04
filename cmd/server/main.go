@@ -98,11 +98,17 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("hello"))
+}
+
 func main() {
 	// Register the image handler
 	http.HandleFunc("/image", imageHandler)
 	// Register the QR code handler
 	http.HandleFunc("/qr", qrHandler)
+	// Register the ping handler
+	http.HandleFunc("/ping", pingHandler)
 
 	// Start the server
 	log.Println("Server starting on :8080...")
