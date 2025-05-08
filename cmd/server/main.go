@@ -11,11 +11,63 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/boombuler/barcode"
 	"github.com/boombuler/barcode/code128"
 	qrcode "github.com/skip2/go-qrcode"
 )
+
+// Rate limiter using token bucket algorithm
+type RateLimiter struct {
+	rate       float64 // tokens per second
+	bucketSize float64
+	tokens     float64
+	lastRefill time.Time
+	mu         sync.Mutex
+}
+
+func NewRateLimiter(rate, bucketSize float64) *RateLimiter {
+	return &RateLimiter{
+		rate:       rate,
+		bucketSize: bucketSize,
+		tokens:     bucketSize,
+		lastRefill: time.Now(),
+	}
+}
+
+func (rl *RateLimiter) Allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(rl.lastRefill).Seconds()
+	rl.tokens = min(rl.bucketSize, rl.tokens+elapsed*rl.rate)
+	rl.lastRefill = now
+
+	if rl.tokens >= 1 {
+		rl.tokens--
+		return true
+	}
+	return false
+}
+
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Cache for QR codes
+var (
+	qrCache      = make(map[string][]byte)
+	qrCacheMutex sync.RWMutex
+)
+
+// Global rate limiter: 10 requests per second with a bucket size of 20
+var globalRateLimiter = NewRateLimiter(10, 20)
 
 func parseHexColor(s string) (color.RGBA, error) {
 	c := color.RGBA{A: 255}
@@ -44,6 +96,12 @@ func generateImage(size int, c1, c2 color.RGBA) image.Image {
 }
 
 func imageHandler(w http.ResponseWriter, r *http.Request) {
+	// Check rate limit
+	if !globalRateLimiter.Allow() {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	// Parse size
 	size := 200
 	if sizeStr := r.URL.Query().Get("size"); sizeStr != "" {
@@ -72,6 +130,12 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func qrHandler(w http.ResponseWriter, r *http.Request) {
+	// Check rate limit
+	if !globalRateLimiter.Allow() {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	// Get the text parameter from the query string
 	text := r.URL.Query().Get("text")
 	if text == "" {
@@ -94,6 +158,26 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Create cache key
+	cacheKey := fmt.Sprintf("%s:%d", text, size)
+
+	// Check cache first
+	qrCacheMutex.RLock()
+	cachedQR, found := qrCache[cacheKey]
+	qrCacheMutex.RUnlock()
+
+	if found {
+		if r.URL.Query().Get("base64") == "true" {
+			base64Str := base64.StdEncoding.EncodeToString(cachedQR)
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write([]byte(base64Str))
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(cachedQR)
+		return
+	}
+
 	// Generate QR code
 	qr, err := qrcode.New(text, qrcode.Medium)
 	if err != nil {
@@ -107,6 +191,11 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
 		return
 	}
+
+	// Store in cache
+	qrCacheMutex.Lock()
+	qrCache[cacheKey] = buf.Bytes()
+	qrCacheMutex.Unlock()
 
 	// Check if base64 encoding is requested
 	if r.URL.Query().Get("base64") == "true" {
@@ -123,6 +212,12 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func barcodeHandler(w http.ResponseWriter, r *http.Request) {
+	// Check rate limit
+	if !globalRateLimiter.Allow() {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	text := r.URL.Query().Get("text")
 	if text == "" {
 		http.Error(w, "Please provide a 'text' parameter", http.StatusBadRequest)
