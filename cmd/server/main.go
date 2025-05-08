@@ -60,14 +60,46 @@ func min(a, b float64) float64 {
 	return b
 }
 
+// IP-based rate limiter
+type IPRateLimiter struct {
+	ips    map[string]*RateLimiter
+	mu     sync.RWMutex
+	rate   float64
+	bucket float64
+}
+
+func NewIPRateLimiter(rate, bucket float64) *IPRateLimiter {
+	return &IPRateLimiter{
+		ips:    make(map[string]*RateLimiter),
+		rate:   rate,
+		bucket: bucket,
+	}
+}
+
+func (rl *IPRateLimiter) getLimiter(ip string) *RateLimiter {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	limiter, exists := rl.ips[ip]
+	if !exists {
+		limiter = NewRateLimiter(rl.rate, rl.bucket)
+		rl.ips[ip] = limiter
+	}
+	return limiter
+}
+
+func (rl *IPRateLimiter) Allow(ip string) bool {
+	return rl.getLimiter(ip).Allow()
+}
+
 // Cache for QR codes
 var (
 	qrCache      = make(map[string][]byte)
 	qrCacheMutex sync.RWMutex
 )
 
-// Global rate limiter: 10 requests per second with a bucket size of 20
-var globalRateLimiter = NewRateLimiter(10, 20)
+// Global IP-based rate limiter: 10 requests per second with a bucket size of 20
+var ipRateLimiter = NewIPRateLimiter(10, 20)
 
 func parseHexColor(s string) (color.RGBA, error) {
 	c := color.RGBA{A: 255}
@@ -95,9 +127,18 @@ func generateImage(size int, c1, c2 color.RGBA) image.Image {
 	return img
 }
 
+func getIP(r *http.Request) string {
+	// Try to get IP from X-Forwarded-For header first
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		return strings.Split(ip, ",")[0]
+	}
+	// Fall back to RemoteAddr
+	return strings.Split(r.RemoteAddr, ":")[0]
+}
+
 func imageHandler(w http.ResponseWriter, r *http.Request) {
-	// Check rate limit
-	if !globalRateLimiter.Allow() {
+	// Check rate limit per IP
+	if !ipRateLimiter.Allow(getIP(r)) {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -130,8 +171,8 @@ func imageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func qrHandler(w http.ResponseWriter, r *http.Request) {
-	// Check rate limit
-	if !globalRateLimiter.Allow() {
+	// Check rate limit per IP
+	if !ipRateLimiter.Allow(getIP(r)) {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -212,8 +253,8 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func barcodeHandler(w http.ResponseWriter, r *http.Request) {
-	// Check rate limit
-	if !globalRateLimiter.Allow() {
+	// Check rate limit per IP
+	if !ipRateLimiter.Allow(getIP(r)) {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
