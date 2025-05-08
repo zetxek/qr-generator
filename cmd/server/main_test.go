@@ -357,13 +357,19 @@ func TestRateLimiter_DifferentIPs(t *testing.T) {
 	}
 }
 
+func resetRateLimiter() {
+	ipRateLimiter = NewIPRateLimiter(10, 20)
+}
+
 func TestQRHandler_RateLimit(t *testing.T) {
+	resetRateLimiter() // Reset rate limiter before test
+
 	// Create a request with a specific IP
 	req := httptest.NewRequest("GET", "/qr?text=test", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 
-	// Make requests up to the limit
-	for i := 0; i < 10; i++ {
+	// Make requests up to the limit (20 requests to ensure we hit the bucket size)
+	for i := 0; i < 20; i++ {
 		rr := httptest.NewRecorder()
 		qrHandler(rr, req)
 		if rr.Code != http.StatusOK {
@@ -380,6 +386,8 @@ func TestQRHandler_RateLimit(t *testing.T) {
 }
 
 func TestQRHandler_RateLimit_DifferentIPs(t *testing.T) {
+	resetRateLimiter() // Reset rate limiter before test
+
 	// Create two requests with different IPs
 	req1 := httptest.NewRequest("GET", "/qr?text=test1", nil)
 	req1.RemoteAddr = "127.0.0.1:12345"
@@ -401,12 +409,14 @@ func TestQRHandler_RateLimit_DifferentIPs(t *testing.T) {
 }
 
 func TestQRHandler_XForwardedFor(t *testing.T) {
+	resetRateLimiter() // Reset rate limiter before test
+
 	// Test rate limiting with X-Forwarded-For header
 	req := httptest.NewRequest("GET", "/qr?text=test", nil)
 	req.Header.Set("X-Forwarded-For", "192.168.1.1")
 
-	// Make requests up to the limit
-	for i := 0; i < 10; i++ {
+	// Make requests up to the limit (20 requests to ensure we hit the bucket size)
+	for i := 0; i < 20; i++ {
 		rr := httptest.NewRecorder()
 		qrHandler(rr, req)
 		if rr.Code != http.StatusOK {
