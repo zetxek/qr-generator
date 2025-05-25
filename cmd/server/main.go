@@ -199,8 +199,18 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get and validate the shape parameter
+	shape := r.URL.Query().Get("shape")
+	if shape == "" {
+		shape = "square" // default shape
+	}
+	if shape != "square" && shape != "rectangle" {
+		http.Error(w, "Shape must be 'square' or 'rectangle'", http.StatusBadRequest)
+		return
+	}
+
 	// Create cache key
-	cacheKey := fmt.Sprintf("%s:%d", text, size)
+	cacheKey := fmt.Sprintf("%s:%d:%s", text, size, shape)
 
 	// Check cache first
 	qrCacheMutex.RLock()
@@ -228,9 +238,45 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create a buffer to store the PNG
 	var buf bytes.Buffer
-	if err := qr.Write(size, &buf); err != nil {
-		http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
-		return
+
+	if shape == "rectangle" {
+		// For rectangle shape, use barcode proportions (approx 4:1 ratio)
+		qrImg := qr.Image(size)
+		width := size * 4
+		height := size
+
+		// Create a new rectangular image
+		rectImg := image.NewRGBA(image.Rect(0, 0, width, height))
+
+		// Fill background with white
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				rectImg.Set(x, y, color.RGBA{255, 255, 255, 255})
+			}
+		}
+
+		// Center the QR code in the rectangular image
+		offsetX := (width - size) / 2
+		offsetY := (height - size) / 2
+
+		// Draw the QR code in the center
+		for y := 0; y < size; y++ {
+			for x := 0; x < size; x++ {
+				c := qrImg.At(x, y)
+				rectImg.Set(x+offsetX, y+offsetY, c)
+			}
+		}
+
+		if err := png.Encode(&buf, rectImg); err != nil {
+			http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Default square shape
+		if err := qr.Write(size, &buf); err != nil {
+			http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Store in cache
