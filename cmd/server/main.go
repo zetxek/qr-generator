@@ -199,8 +199,28 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get and validate the shape parameter
+	shape := r.URL.Query().Get("shape")
+	if shape == "" {
+		shape = "square" // default shape
+	}
+	if shape != "square" && shape != "rectangle" {
+		http.Error(w, "Shape must be 'square' or 'rectangle'", http.StatusBadRequest)
+		return
+	}
+
+	// Get and validate the type parameter
+	codeType := r.URL.Query().Get("type")
+	if codeType == "" {
+		codeType = "qr" // default type
+	}
+	if codeType != "qr" && codeType != "barcode" {
+		http.Error(w, "Type must be 'qr' or 'barcode'", http.StatusBadRequest)
+		return
+	}
+
 	// Create cache key
-	cacheKey := fmt.Sprintf("%s:%d", text, size)
+	cacheKey := fmt.Sprintf("%s:%d:%s:%s", text, size, shape, codeType)
 
 	// Check cache first
 	qrCacheMutex.RLock()
@@ -219,17 +239,79 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate QR code
-	qr, err := qrcode.New(text, qrcode.Medium)
-	if err != nil {
-		http.Error(w, "Failed to generate QR code", http.StatusInternalServerError)
-		return
-	}
-
 	// Create a buffer to store the PNG
 	var buf bytes.Buffer
-	if err := qr.Write(size, &buf); err != nil {
-		http.Error(w, "Failed to write QR code", http.StatusInternalServerError)
+	var codeImg image.Image
+
+	if codeType == "barcode" {
+		// Generate barcode
+		bar, err := code128.Encode(text)
+		if err != nil {
+			http.Error(w, "Failed to generate barcode", http.StatusInternalServerError)
+			return
+		}
+
+		if shape == "rectangle" {
+			// For barcodes, use natural barcode proportions
+			codeImg, err = barcode.Scale(bar, size*4, size)
+			if err != nil {
+				http.Error(w, "Failed to scale barcode", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Square shape for barcode
+			codeImg, err = barcode.Scale(bar, size, size)
+			if err != nil {
+				http.Error(w, "Failed to scale barcode", http.StatusInternalServerError)
+				return
+			}
+		}
+	} else {
+		// Generate QR code
+		qr, err := qrcode.New(text, qrcode.Medium)
+		if err != nil {
+			http.Error(w, "Failed to generate QR code", http.StatusInternalServerError)
+			return
+		}
+
+		if shape == "rectangle" {
+			// For rectangle shape, use barcode proportions (approx 4:1 ratio)
+			qrImg := qr.Image(size)
+			width := size * 4
+			height := size
+
+			// Create a new rectangular image
+			rectImg := image.NewRGBA(image.Rect(0, 0, width, height))
+
+			// Fill background with white
+			for y := 0; y < height; y++ {
+				for x := 0; x < width; x++ {
+					rectImg.Set(x, y, color.RGBA{255, 255, 255, 255})
+				}
+			}
+
+			// Center the QR code in the rectangular image
+			offsetX := (width - size) / 2
+			offsetY := (height - size) / 2
+
+			// Draw the QR code in the center
+			for y := 0; y < size; y++ {
+				for x := 0; x < size; x++ {
+					c := qrImg.At(x, y)
+					rectImg.Set(x+offsetX, y+offsetY, c)
+				}
+			}
+
+			codeImg = rectImg
+		} else {
+			// Default square shape
+			codeImg = qr.Image(size)
+		}
+	}
+
+	// Encode the image to PNG
+	if err := png.Encode(&buf, codeImg); err != nil {
+		http.Error(w, "Failed to encode image", http.StatusInternalServerError)
 		return
 	}
 
@@ -279,6 +361,16 @@ func barcodeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get and validate the shape parameter
+	shape := r.URL.Query().Get("shape")
+	if shape == "" {
+		shape = "rectangle" // default shape for barcodes is rectangle
+	}
+	if shape != "square" && shape != "rectangle" {
+		http.Error(w, "Shape must be 'square' or 'rectangle'", http.StatusBadRequest)
+		return
+	}
+
 	// Generate barcode
 	bar, err := code128.Encode(text)
 	if err != nil {
@@ -286,8 +378,15 @@ func barcodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Scale barcode to requested size
-	scaledBar, err := barcode.Scale(bar, size, size)
+	// Scale barcode to requested size based on shape
+	var scaledBar image.Image
+	if shape == "rectangle" {
+		// For rectangle shape, use natural barcode proportions (4:1 ratio)
+		scaledBar, err = barcode.Scale(bar, size*4, size)
+	} else {
+		// Square shape
+		scaledBar, err = barcode.Scale(bar, size, size)
+	}
 	if err != nil {
 		http.Error(w, "Failed to scale barcode", http.StatusInternalServerError)
 		return
