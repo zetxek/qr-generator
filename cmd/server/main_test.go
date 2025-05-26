@@ -677,17 +677,24 @@ func TestQRHandler_Rectangle_DifferentFromSquare(t *testing.T) {
 }
 
 func TestBarcodeHandler_Rectangle_DifferentFromSquare(t *testing.T) {
+	resetRateLimiter() // Reset rate limiter before test to avoid conflicts
+
 	// Verify that rectangle and square shapes produce different images for barcodes
 	req1 := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=square", nil)
+	req1.RemoteAddr = "127.0.0.1:12345" // Set a specific IP for rate limiting
 	rr1 := httptest.NewRecorder()
 	barcodeHandler(rr1, req1)
 
 	req2 := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=rectangle", nil)
+	req2.RemoteAddr = "127.0.0.2:12345" // Use a different IP to avoid rate limiting
 	rr2 := httptest.NewRecorder()
 	barcodeHandler(rr2, req2)
 
-	if rr1.Code != http.StatusOK || rr2.Code != http.StatusOK {
-		t.Fatal("both requests should succeed")
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("square request should succeed, got status %d: %s", rr1.Code, rr1.Body.String())
+	}
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("rectangle request should succeed, got status %d: %s", rr2.Code, rr2.Body.String())
 	}
 
 	if bytes.Equal(rr1.Body.Bytes(), rr2.Body.Bytes()) {
