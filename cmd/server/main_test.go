@@ -431,3 +431,266 @@ func TestQRHandler_XForwardedFor(t *testing.T) {
 		t.Fatal("request should be rate limited")
 	}
 }
+
+// Tests for Shape Parameter
+
+func TestQRHandler_Shape_Square(t *testing.T) {
+	req := httptest.NewRequest("GET", "/qr?text=hello&shape=square", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestQRHandler_Shape_Rectangle(t *testing.T) {
+	req := httptest.NewRequest("GET", "/qr?text=hello&shape=rectangle", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestQRHandler_Shape_Default(t *testing.T) {
+	// Test that default shape is square
+	req := httptest.NewRequest("GET", "/qr?text=hello", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+}
+
+func TestQRHandler_Shape_Invalid(t *testing.T) {
+	req := httptest.NewRequest("GET", "/qr?text=hello&shape=invalid", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Shape must be 'square' or 'rectangle'") {
+		t.Fatalf("expected error about shape, got %s", rr.Body.String())
+	}
+}
+
+func TestQRHandler_Type_QR(t *testing.T) {
+	req := httptest.NewRequest("GET", "/qr?text=hello&type=qr", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+}
+
+func TestQRHandler_Type_Barcode(t *testing.T) {
+	req := httptest.NewRequest("GET", "/qr?text=1234567890&type=barcode", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+}
+
+func TestQRHandler_Type_Default(t *testing.T) {
+	// Test that default type is qr
+	req := httptest.NewRequest("GET", "/qr?text=hello", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+}
+
+func TestQRHandler_Type_Invalid(t *testing.T) {
+	req := httptest.NewRequest("GET", "/qr?text=hello&type=invalid", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Type must be 'qr' or 'barcode'") {
+		t.Fatalf("expected error about type, got %s", rr.Body.String())
+	}
+}
+
+func TestQRHandler_Barcode_Rectangle(t *testing.T) {
+	// Test barcode with rectangle shape via QR endpoint
+	req := httptest.NewRequest("GET", "/qr?text=1234567890&type=barcode&shape=rectangle", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+}
+
+func TestQRHandler_Barcode_Square(t *testing.T) {
+	// Test barcode with square shape via QR endpoint
+	req := httptest.NewRequest("GET", "/qr?text=1234567890&type=barcode&shape=square", nil)
+	rr := httptest.NewRecorder()
+	qrHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+}
+
+func TestBarcodeHandler_Shape_Rectangle(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=rectangle", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestBarcodeHandler_Shape_Square(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=square", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected Content-Type image/png, got %s", ct)
+	}
+	if len(rr.Body.Bytes()) < 100 {
+		t.Fatalf("expected image data, got too few bytes (%d)", len(rr.Body.Bytes()))
+	}
+}
+
+func TestBarcodeHandler_Shape_Default(t *testing.T) {
+	// Test that default shape for barcode is rectangle
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+}
+
+func TestBarcodeHandler_Shape_Invalid(t *testing.T) {
+	req := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=invalid", nil)
+	rr := httptest.NewRecorder()
+	barcodeHandler(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Shape must be 'square' or 'rectangle'") {
+		t.Fatalf("expected error about shape, got %s", rr.Body.String())
+	}
+}
+
+func TestQRHandler_Cache_DifferentShapes(t *testing.T) {
+	// Test that different shapes create different cache entries
+	req1 := httptest.NewRequest("GET", "/qr?text=testcache&shape=square", nil)
+	rr1 := httptest.NewRecorder()
+	qrHandler(rr1, req1)
+
+	req2 := httptest.NewRequest("GET", "/qr?text=testcache&shape=rectangle", nil)
+	rr2 := httptest.NewRecorder()
+	qrHandler(rr2, req2)
+
+	if bytes.Equal(rr1.Body.Bytes(), rr2.Body.Bytes()) {
+		t.Fatal("different shapes should not have same cache entry")
+	}
+}
+
+func TestQRHandler_Cache_DifferentTypes(t *testing.T) {
+	// Test that different types create different cache entries
+	req1 := httptest.NewRequest("GET", "/qr?text=1234567890&type=qr", nil)
+	rr1 := httptest.NewRecorder()
+	qrHandler(rr1, req1)
+
+	req2 := httptest.NewRequest("GET", "/qr?text=1234567890&type=barcode", nil)
+	rr2 := httptest.NewRecorder()
+	qrHandler(rr2, req2)
+
+	if bytes.Equal(rr1.Body.Bytes(), rr2.Body.Bytes()) {
+		t.Fatal("different types should not have same cache entry")
+	}
+}
+
+func TestQRHandler_Rectangle_DifferentFromSquare(t *testing.T) {
+	// Verify that rectangle and square shapes produce different images
+	req1 := httptest.NewRequest("GET", "/qr?text=hello&shape=square", nil)
+	rr1 := httptest.NewRecorder()
+	qrHandler(rr1, req1)
+
+	req2 := httptest.NewRequest("GET", "/qr?text=hello&shape=rectangle", nil)
+	rr2 := httptest.NewRecorder()
+	qrHandler(rr2, req2)
+
+	if rr1.Code != http.StatusOK || rr2.Code != http.StatusOK {
+		t.Fatal("both requests should succeed")
+	}
+
+	if bytes.Equal(rr1.Body.Bytes(), rr2.Body.Bytes()) {
+		t.Fatal("square and rectangle shapes should produce different images")
+	}
+}
+
+func TestBarcodeHandler_Rectangle_DifferentFromSquare(t *testing.T) {
+	// Verify that rectangle and square shapes produce different images for barcodes
+	req1 := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=square", nil)
+	rr1 := httptest.NewRecorder()
+	barcodeHandler(rr1, req1)
+
+	req2 := httptest.NewRequest("GET", "/barcode?text=1234567890&shape=rectangle", nil)
+	rr2 := httptest.NewRecorder()
+	barcodeHandler(rr2, req2)
+
+	if rr1.Code != http.StatusOK || rr2.Code != http.StatusOK {
+		t.Fatal("both requests should succeed")
+	}
+
+	if bytes.Equal(rr1.Body.Bytes(), rr2.Body.Bytes()) {
+		t.Fatal("square and rectangle shapes should produce different images")
+	}
+}
