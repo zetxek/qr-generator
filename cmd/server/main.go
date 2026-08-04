@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"image"
 	"image/color"
@@ -234,8 +236,7 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(base64Str))
 			return
 		}
-		w.Header().Set("Content-Type", "image/png")
-		w.Write(cachedQR)
+		writeImage(w, cachedQR)
 		return
 	}
 
@@ -330,8 +331,7 @@ func qrHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If not base64, return the PNG image
-	w.Header().Set("Content-Type", "image/png")
-	w.Write(buf.Bytes())
+	writeImage(w, buf.Bytes())
 }
 
 func barcodeHandler(w http.ResponseWriter, r *http.Request) {
@@ -409,19 +409,38 @@ func barcodeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
+// writeImage sends a generated code with caching headers.
+//
+// A code for a given text/size/shape/type never changes, so it is safe to cache hard. This is
+// not only an optimisation: Garmin's image service proxies makeImageRequest calls server-side
+// and is selective about what it will serve (bug CIQQA-3382). The hosts observed working
+// through that proxy send Cache-Control and ETag, and this service previously sent neither.
+func writeImage(w http.ResponseWriter, data []byte) {
+	sum := sha256.Sum256(data)
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+	w.Header().Set("ETag", fmt.Sprintf("%q", hex.EncodeToString(sum[:16])))
+	w.Write(data)
+}
+
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello"))
 }
 
 func main() {
-	// Register the image handler
-	http.HandleFunc("/image", imageHandler)
-	// Register the QR code handler
-	http.HandleFunc("/qr", qrHandler)
-	// Register the barcode handler
-	http.HandleFunc("/barcode", barcodeHandler)
-	// Register the ping handler
-	http.HandleFunc("/ping", pingHandler)
+	// Each endpoint is registered with and without a trailing slash. Go's ServeMux matches
+	// "/qr" exactly, so "/qr/" fell through to the default handler and returned 404 - an easy
+	// way to lose a request to any client or proxy that normalises URLs.
+	for path, handler := range map[string]http.HandlerFunc{
+		"/image":   imageHandler,
+		"/qr":      qrHandler,
+		"/barcode": barcodeHandler,
+		"/ping":    pingHandler,
+	} {
+		http.HandleFunc(path, handler)
+		http.HandleFunc(path+"/", handler)
+	}
 
 	// Start the server
 	log.Println("Server starting on :8080...")
