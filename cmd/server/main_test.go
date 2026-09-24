@@ -701,3 +701,94 @@ func TestBarcodeHandler_Rectangle_DifferentFromSquare(t *testing.T) {
 		t.Fatal("square and rectangle shapes should produce different images")
 	}
 }
+
+// Garmin's image service proxies makeImageRequest calls and is selective about what it will
+// serve (bug CIQQA-3382); the hosts observed working through it send caching headers and this
+// service previously sent none. These are also correct on their own terms: a code for a given
+// text and size never changes.
+func TestImageResponsesAreCacheable(t *testing.T) {
+	cases := []struct {
+		name    string
+		url     string
+		handler http.HandlerFunc
+	}{
+		{"qr", "/qr?text=HELLO&size=250", qrHandler},
+		{"barcode", "/barcode?text=HELLO&size=250", barcodeHandler},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", c.url, nil)
+			rec := httptest.NewRecorder()
+			c.handler(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got == "" {
+				t.Error("expected a Cache-Control header, got none")
+			}
+			if got := rec.Header().Get("ETag"); got == "" {
+				t.Error("expected an ETag header, got none")
+			}
+			if got := rec.Header().Get("Content-Type"); got != "image/png" {
+				t.Errorf("expected image/png, got %q", got)
+			}
+		})
+	}
+}
+
+// The same bytes must always carry the same ETag, including on the cached path.
+func TestETagIsStableAcrossRequests(t *testing.T) {
+	first := httptest.NewRecorder()
+	qrHandler(first, httptest.NewRequest("GET", "/qr?text=STABLE&size=250", nil))
+	second := httptest.NewRecorder()
+	qrHandler(second, httptest.NewRequest("GET", "/qr?text=STABLE&size=250", nil))
+
+	if a, b := first.Header().Get("ETag"), second.Header().Get("ETag"); a != b || a == "" {
+		t.Errorf("expected a stable non-empty ETag, got %q then %q", a, b)
+	}
+}
+
+// Go's ServeMux matches "/qr" exactly, so "/qr/" used to fall through to the default handler
+// and 404. Any client or proxy that normalises URLs would lose the request. But registering
+// "path/" directly would make it a subtree match, so genuinely unknown nested paths (e.g.
+// "/qr/unexpected") must still 404 rather than reach the handler.
+func TestTrailingSlashIsRouted(t *testing.T) {
+	mux := http.NewServeMux()
+	for path, handler := range map[string]http.HandlerFunc{
+		"/qr":      qrHandler,
+		"/barcode": barcodeHandler,
+		"/ping":    pingHandler,
+	} {
+		mux.HandleFunc(path, handler)
+		mux.HandleFunc(path+"/", exactPath(path+"/", handler))
+	}
+
+	ok := []string{
+		"/qr?text=HELLO&size=250",
+		"/qr/?text=HELLO&size=250",
+		"/barcode?text=HELLO&size=250",
+		"/barcode/?text=HELLO&size=250",
+	}
+	for _, path := range ok {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: expected 200, got %d", path, rec.Code)
+		}
+	}
+
+	notFound := []string{
+		"/qr/unexpected?text=HELLO",
+		"/qr/foo/bar?text=HELLO",
+		"/ping/unexpected",
+	}
+	for _, path := range notFound {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: expected 404, got %d", path, rec.Code)
+		}
+	}
+}
