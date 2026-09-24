@@ -707,21 +707,34 @@ func TestBarcodeHandler_Rectangle_DifferentFromSquare(t *testing.T) {
 // service previously sent none. These are also correct on their own terms: a code for a given
 // text and size never changes.
 func TestImageResponsesAreCacheable(t *testing.T) {
-	req := httptest.NewRequest("GET", "/qr?text=HELLO&size=250", nil)
-	rec := httptest.NewRecorder()
-	qrHandler(rec, req)
+	cases := []struct {
+		name    string
+		url     string
+		handler http.HandlerFunc
+	}{
+		{"qr", "/qr?text=HELLO&size=250", qrHandler},
+		{"barcode", "/barcode?text=HELLO&size=250", barcodeHandler},
+	}
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if got := rec.Header().Get("Cache-Control"); got == "" {
-		t.Error("expected a Cache-Control header, got none")
-	}
-	if got := rec.Header().Get("ETag"); got == "" {
-		t.Error("expected an ETag header, got none")
-	}
-	if got := rec.Header().Get("Content-Type"); got != "image/png" {
-		t.Errorf("expected image/png, got %q", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", c.url, nil)
+			rec := httptest.NewRecorder()
+			c.handler(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got == "" {
+				t.Error("expected a Cache-Control header, got none")
+			}
+			if got := rec.Header().Get("ETag"); got == "" {
+				t.Error("expected an ETag header, got none")
+			}
+			if got := rec.Header().Get("Content-Type"); got != "image/png" {
+				t.Errorf("expected image/png, got %q", got)
+			}
+		})
 	}
 }
 
@@ -738,27 +751,44 @@ func TestETagIsStableAcrossRequests(t *testing.T) {
 }
 
 // Go's ServeMux matches "/qr" exactly, so "/qr/" used to fall through to the default handler
-// and 404. Any client or proxy that normalises URLs would lose the request.
+// and 404. Any client or proxy that normalises URLs would lose the request. But registering
+// "path/" directly would make it a subtree match, so genuinely unknown nested paths (e.g.
+// "/qr/unexpected") must still 404 rather than reach the handler.
 func TestTrailingSlashIsRouted(t *testing.T) {
 	mux := http.NewServeMux()
 	for path, handler := range map[string]http.HandlerFunc{
 		"/qr":      qrHandler,
 		"/barcode": barcodeHandler,
+		"/ping":    pingHandler,
 	} {
 		mux.HandleFunc(path, handler)
-		mux.HandleFunc(path+"/", handler)
+		mux.HandleFunc(path+"/", exactPath(path+"/", handler))
 	}
 
-	for _, path := range []string{
+	ok := []string{
 		"/qr?text=HELLO&size=250",
 		"/qr/?text=HELLO&size=250",
 		"/barcode?text=HELLO&size=250",
 		"/barcode/?text=HELLO&size=250",
-	} {
+	}
+	for _, path := range ok {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: expected 200, got %d", path, rec.Code)
+		}
+	}
+
+	notFound := []string{
+		"/qr/unexpected?text=HELLO",
+		"/qr/foo/bar?text=HELLO",
+		"/ping/unexpected",
+	}
+	for _, path := range notFound {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: expected 404, got %d", path, rec.Code)
 		}
 	}
 }

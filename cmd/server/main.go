@@ -405,8 +405,7 @@ func barcodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/png")
-	w.Write(buf.Bytes())
+	writeImage(w, buf.Bytes())
 }
 
 // writeImage sends a generated code with caching headers.
@@ -424,6 +423,18 @@ func writeImage(w http.ResponseWriter, data []byte) {
 	w.Write(data)
 }
 
+// exactPath rejects anything below a trailing-slash route, since ServeMux would
+// otherwise treat "path/" as a subtree match and route "path/anything" here too.
+func exactPath(path string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != path {
+			http.NotFound(w, r)
+			return
+		}
+		handler(w, r)
+	}
+}
+
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello"))
 }
@@ -431,7 +442,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	// Each endpoint is registered with and without a trailing slash. Go's ServeMux matches
 	// "/qr" exactly, so "/qr/" fell through to the default handler and returned 404 - an easy
-	// way to lose a request to any client or proxy that normalises URLs.
+	// way to lose a request to any client or proxy that normalises URLs. Registering "/qr/"
+	// directly would make it a subtree match (e.g. "/qr/anything"), so wrap it to 404 on
+	// anything but the exact trailing-slash path.
 	for path, handler := range map[string]http.HandlerFunc{
 		"/image":   imageHandler,
 		"/qr":      qrHandler,
@@ -439,7 +452,7 @@ func main() {
 		"/ping":    pingHandler,
 	} {
 		http.HandleFunc(path, handler)
-		http.HandleFunc(path+"/", handler)
+		http.HandleFunc(path+"/", exactPath(path+"/", handler))
 	}
 
 	// Start the server
